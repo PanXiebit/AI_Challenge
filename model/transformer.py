@@ -3,6 +3,8 @@
 import tensorflow as tf
 from model.Modules import *
 from model.multi_head_attention import *
+import os
+from word_vec import train_wordvec
 
 
 __author__ = "Xie Pan"
@@ -33,13 +35,13 @@ class Transformer():
 
 
         # add placeholders
-        self.input_x = tf.placeholder(dtype=tf.int32, shape=[None, self.sentence_len],name="input_x")
-        self.input_y = tf.placeholder(dtype=tf.int32, shape=[None, self.sentence_len],name="input_y")
+        self.input_x = tf.placeholder(dtype=tf.int32, shape=[None, self.sentence_len],name="input_x") #[None, 30]
+        self.input_y = tf.placeholder(dtype=tf.int32, shape=[None, self.sentence_len],name="input_y") #[None, 30]
         self.is_training = tf.placeholder(dtype=tf.bool, shape=[], name="is_training")
 
         # define decoder inputs
         # decoder 的初始输入是随机的？
-        self.decoder_inputs = tf.concat([tf.ones_like(self.input_y[:,:1])*2, self.input_y[:,:-1]],axis=-1) # 2:<S>
+        self.decoder_inputs = tf.concat([tf.ones_like(self.input_y[:,:1]), self.input_y[:,:-1]],axis=-1) # <start>
 
         # encoder
         self.enc = self._encoder()
@@ -79,20 +81,28 @@ class Transformer():
         with tf.variable_scope("encoder"):
             # 1. embedding
             with tf.variable_scope("embedding-layer"):
-                self.enc = embedding(inputs=self.input_x,
-                                       vocab_size=self.vocab_size_cn,
-                                       num_units=self.d_model,
-                                       scale=True)   # [batch, sentence_len, d_model]
+                # 这个embedding还是要修改,没有padding,没有unk
+                # self.enc = embedding(inputs=self.input_x,
+                #                        vocab_size=self.vocab_size_cn,
+                #                        num_units=self.d_model,
+                #                        scale=True)   # [batch, sentence_len, d_model]
+
+                # 预训练的embedding
+                if not os.path.exists("output/zh_word2vec.npy"):
+                    train_wordvec(lan="zh")
+                zh_embedding = np.load("output/zh_word2vec.npy")     # [zh_vocab_size, embed_size]
+                self.enc = tf.nn.embedding_lookup(zh_embedding, self.input_x)   # [batch_size, sentence_len, embed_size]
+
 
             # 2. position encoding
             with tf.variable_scope("position_encoding"):
-                encoding = position_encoding_mine(self.enc.get_shape()[1], self.d_model)
-                self.enc *= encoding
+                encoding = position_encoding_mine(self.enc.get_shape()[1], self.enc.get_shape()[2]) # [sentence_len, embed_size]
+                self.enc *= encoding  #[None, 30, 256]
 
             # 3.dropout
             self.enc = tf.layers.dropout(self.enc,
                                          rate=self.dropout_keep_prob,
-                                         training=self.is_training)
+                                         training=self.is_training)   # [None, 30, 256]
 
             # 4. Blocks
             for i in range(self.num_layers):
@@ -103,23 +113,26 @@ class Transformer():
                                                   k=self.enc,
                                                   v=self.enc,
                                                   d_model=self.d_model,
+                                                  keys_mask=True,
                                                   heads=self.heads,
                                                   causality=False,
                                                   dropout_keep_prob=self.dropout_keep_prob,
-                                                  is_training=True)
+                                                  is_training=self.is_training)  # is_training 在训练和测试的时候不一样,dropout也不一样
                     # Feed Froward
                     self.enc = position_wise_feed_forward(self.enc,
                                                           num_units1= 4*self.d_model,
                                                           num_units2= self.d_model,
                                                           reuse=False)
-        return self.enc
+        return self.enc  #[None, 30, 256]
 
     def _decoder(self):
         with tf.variable_scope("decoder"):
             # embedding
-            self.dec = embedding(self.decoder_inputs,
-                                 vocab_size=self.vocab_size_en,
-                                 num_units=self.d_model)   # [batch, sentence_len, d_model]
+            # self.dec = embedding(self.decoder_inputs,
+            #                     vocab_size=self.vocab_size_en,
+            #                     num_units=self.d_model)   # [batch, sentence_len, d_model]
+            en_embedding = np.load("output/en_word2vec.npy")                # [en_vocab_size, embed_size]
+            self.dec = tf.nn.embedding_lookup(en_embedding, self.input_y)  # [batch, sentence_len, embed_size]
 
             # position decoding
             encoding = position_encoding_mine(self.dec.get_shape()[1], self.d_model)
@@ -136,7 +149,8 @@ class Transformer():
                                                       d_model=self.d_model,
                                                       heads=self.heads,
                                                       keys_mask=True,
-                                                      causality=True)
+                                                      causality=True,
+                                                      is_training=self.is_training)
 
                     # encoder-decoder-attention
                     with tf.variable_scope("encoder-decoder-attention"):
@@ -146,7 +160,8 @@ class Transformer():
                                                       d_model=self.d_model,
                                                       heads=self.heads,
                                                       keys_mask=True,
-                                                      causality=True)
+                                                      causality=True,
+                                                      is_training=self.is_training)
 
                     self.dec = position_wise_feed_forward(self.dec,
                                                           num_units1= 4*self.d_model,

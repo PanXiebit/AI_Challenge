@@ -11,7 +11,7 @@ def build_dataset(train=True, lan="en", max_len=30):
     # 最大长度的设计有待考虑，因为这是翻译，也不是分类，有多长就要设置多长吧，那可能很长很长很长吧。。。像google翻译
     path = "output/" + lan
     if not os.path.exists(path + "_vocab.pkl"):
-        print(lan + "train word2vec!")
+        print(lan + " train word2vec!")
         train_wordvec()
     word2id = pickle.load(open(path + '_vocab.pkl', 'rb'))  # dict
 
@@ -39,5 +39,5 @@ def build_dataset(train=True, lan="en", max_len=30):
     print(lan + " dataset saved!")
 
 if __name__ == "__main__":
-    build_dataset()
-    #build_dataset(lan="zh")
+    #build_dataset()
+    build_dataset(lan="zh")

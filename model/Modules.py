@@ -83,7 +83,7 @@ def position_encoding_mine(n_position, d_model):
     encoding = np.zeros([n_position, d_model], np.float32)
     for pos in range(1, n_position):
         for i in range(0, d_model):
-            encoding[pos, i] = pos /np.power(10000, 2.*i/d_model)
+            encoding[pos, i] = pos /np.power(10000, 2.*i/encoding.shape[1])
 
     encoding[1:-2, 0::2] = np.sin(encoding[1:-2, 0::2]) # dim 2i
     encoding[1:-2, 1::2] = np.cos(encoding[1:-2, 1::2]) # dim 2i+1
@@ -160,10 +160,47 @@ def Normalize(inputs,
         outputs = tf.to_float(gamma) * normalized + tf.to_float(beta)
     return outputs
 
+def Normalize_mine(inputs,
+                   epsilon=1e-8,
+                   decay = 0.9,
+                   is_training=True):
+    """
+
+    :param inputs: [None, length_q, d_model]
+    :param epsilon:
+    :param decay:
+    :param is_training:
+    :return:
+    """
+    with tf.variable_scope("batch-normalization"):
+        param_shape = inputs.get_shape()[:-1] # [None, length_q]
+        pop_mean = tf.get_variable("mean", param_shape, initializer=tf.zeros_initializer, trainable=False)
+        pop_var = tf.get_variable("variance", param_shape, initializer=tf.ones_initializer, trainable=False)
+
+        def mean_and_var_update():
+            batch_mean, batch_var = tf.nn.moments(inputs, param_shape, name="moments")  # [None, length_q]
+            # 用滑动平均值来统计整体的均值和方差,在训练阶段并用不上,在测试阶段才会用,这里是保证在训练阶段计算了滑动平均值
+            train_mean = tf.assign(pop_mean, pop_mean * decay + batch_mean * (1 - decay))
+            # 也可用 assign_moving_average(pop_mean, batch_mean, decay)
+            train_var = tf.assign(pop_var, pop_var * decay + batch_var * (1 - decay))
+            # 也可用 assign_moving_average(pop_var, batch_var, decay)
+
+            with tf.control_dependencies([train_mean, train_var]):
+                return tf.identity(batch_mean), tf.identity(batch_var)
+
+        mean, variance = tf.cond(is_training, mean_and_var_update(), lambda:(pop_mean, pop_var))
+
+        if is_training:
+            beta = tf.get_variable("shift", shape=inputs.get_shape()[-1], initializer=tf.zeros_initializer)
+            gamma = tf.get_variable("scale", shape=inputs.get_shape()[-1], initializer=tf.ones_initializer)
+            return tf.nn.batch_normalization(inputs, mean, variance, beta, gamma, epsilon)
+        else:
+            return tf.nn.batch_normalization(inputs, mean, variance, None, None, epsilon)
+
 
 def position_wise_feed_forward(inputs,
-                               num_units1=2048,
-                               num_units2=512,
+                               num_units1=1024,
+                               num_units2=256,
                                reuse=None):
     """ Point-wise feed forward net.
 

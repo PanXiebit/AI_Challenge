@@ -17,10 +17,11 @@ zh_train_data = np.squeeze(np.load("output/zh_dataset.npy"),axis=1)  # [None, 1,
 assert (len(en_train_data) == len(zh_train_data))
 
 train_en, valid_en, train_zh, valid_zh = train_test_split(en_train_data, zh_train_data, test_size=0.2)
+# train:[7922595, 30]  valid:[1980649, 30]
 
 # pretrained wordvec
-en_embedding = np.load("output/en_word2vec.npy") #
-zh_embedding = np.load("output/zh_word2vec.npy")
+en_embedding = np.load("output/en_word2vec.npy") # (66891, 256)
+zh_embedding = np.load("output/zh_word2vec.npy") # (143221, 256)
 
 
 # Hyperparameters
@@ -38,16 +39,16 @@ def batch_iter(train_en, train_zh):
     train_en = train_en[index]
     train_zh = train_zh[index]
 
-    num_batches_per_epoch = (len(train_en) - 1) // BATCH_SIZE + 1
+    num_batches_per_epoch = (len(train_en) - 1) // BATCH_SIZE + 1  # 7922595/128=61895 这会不会太多了啊?????但是batch太大,内存不够吧?
     for i in range(NUM_EPOCH):
         for batch_num in range(num_batches_per_epoch):
             start = batch_num * BATCH_SIZE
             end = min(start + BATCH_SIZE, len(train_en))
             yield train_en[start:end], train_zh[start:end]
 
-model = Transformer(d_k=64,
-                    d_v=64,
-                    d_model=512,
+model = Transformer(d_k=32,
+                    d_v=32,
+                    d_model=256,
                     sentence_len=SENTENCE_LEN,
                     vocab_size_cn=VOCAB_SIZE_CN,
                     vocab_size_en=VOCAB_SIZE_EN,
