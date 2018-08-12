@@ -1,6 +1,7 @@
 import nltk
 import re
 from nltk.stem import SnowballStemmer  # 词干提取
+from nltk.stem import WordNetLemmatizer # 词形还原
 
 class TextPreProcessing(object):
     def __init__(self):
@@ -56,11 +57,17 @@ class TextPreProcessing(object):
     @staticmethod
     def stem(sent):
         stemmer = SnowballStemmer("english")
-        sent = " ".join([stemmer.stem(word) for word in nltk.word_tokenize(TextPreProcessing.clean_text(sent).lower())])
-        return sent.lower().split()
+        sent = [stemmer.stem(word) for word in nltk.word_tokenize(TextPreProcessing.clean_text(sent).lower())]
+        return sent
+
+    @staticmethod
+    def lemma(sent):
+        wnl = WordNetLemmatizer()
+        sent = [wnl.lemmatize(word) for word in nltk.word_tokenize(TextPreProcessing.clean_text(sent).lower())]
+        return sent
 
 if __name__=="__main__":
     text = "He's my uncle, and he's 29 year old. He loves me very much!"
     prepro = TextPreProcessing
-    text = prepro.stem(text)
+    text = prepro.lemma(text) # list
     print(text)

@@ -22,7 +22,6 @@ class MySentence():
         
     def __iter__(self):
         for line in tqdm.tqdm(open(self.dirname)):
-            #yield TextPreProcessing.stem(line.strip())
             yield TextPreProcessing.stem(line.strip())
             
 class MyZhSentence():

@@ -5,6 +5,7 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.layers.python.layers import xavier_initializer
+from tensorflow.python.training.moving_averages import assign_moving_average
 
 """ Embddding and softmax
 Similarly to other sequence transduction models, we use learned embeddings to convert the input tokens and output
@@ -160,42 +161,28 @@ def Normalize(inputs,
         outputs = tf.to_float(gamma) * normalized + tf.to_float(beta)
     return outputs
 
-def Normalize_mine(inputs,
-                   epsilon=1e-8,
-                   decay = 0.9,
-                   is_training=True):
-    """
+def batchNorm_mine(inputs,
+                    is_training=True,
+                    epsilon=1e-8,
+                    decay = 0.9):
 
-    :param inputs: [None, length_q, d_model]
-    :param epsilon:
-    :param decay:
-    :param is_training:
-    :return:
-    """
     with tf.variable_scope("batch-normalization"):
-        param_shape = inputs.get_shape()[:-1] # [None, length_q]
-        pop_mean = tf.get_variable("mean", param_shape, initializer=tf.zeros_initializer, trainable=False)
-        pop_var = tf.get_variable("variance", param_shape, initializer=tf.ones_initializer, trainable=False)
+        pop_mean = tf.Variable(tf.zeros([inputs.get_shape()[-1]]), trainable=False, name="pop-mean") #[depth]
+        pop_var = tf.Variable(tf.ones([inputs.get_shape()[-1]]), trainable=False, name="pop-var")
 
         def mean_and_var_update():
-            batch_mean, batch_var = tf.nn.moments(inputs, param_shape, name="moments")  # [None, length_q]
-            # 用滑动平均值来统计整体的均值和方差,在训练阶段并用不上,在测试阶段才会用,这里是保证在训练阶段计算了滑动平均值
-            train_mean = tf.assign(pop_mean, pop_mean * decay + batch_mean * (1 - decay))
-            # 也可用 assign_moving_average(pop_mean, batch_mean, decay)
-            train_var = tf.assign(pop_var, pop_var * decay + batch_var * (1 - decay))
-            # 也可用 assign_moving_average(pop_var, batch_var, decay)
-
-            with tf.control_dependencies([train_mean, train_var]):
+            axes = list(range(len(inputs.get_shape()) - 1))
+            # used with convolutional filters with shape `[batch, height, width, depth]`, pass `axes=[0, 1, 2]`
+            # 每一个kernel所对应的batch个图，求它们所有像素的mean和variance
+            batch_mean, batch_var = tf.nn.moments(inputs, axes, name="moments")  # [depth]
+            with tf.control_dependencies([assign_moving_average(pop_mean, batch_mean, decay),
+                                        assign_moving_average(pop_var, batch_var, decay)]):
                 return tf.identity(batch_mean), tf.identity(batch_var)
+        mean, variance = tf.cond(is_training, mean_and_var_update, lambda:(pop_mean, pop_var))
 
-        mean, variance = tf.cond(is_training, mean_and_var_update(), lambda:(pop_mean, pop_var))
-
-        if is_training:
-            beta = tf.get_variable("shift", shape=inputs.get_shape()[-1], initializer=tf.zeros_initializer)
-            gamma = tf.get_variable("scale", shape=inputs.get_shape()[-1], initializer=tf.ones_initializer)
-            return tf.nn.batch_normalization(inputs, mean, variance, beta, gamma, epsilon)
-        else:
-            return tf.nn.batch_normalization(inputs, mean, variance, None, None, epsilon)
+        beta = tf.Variable(initial_value=tf.zeros(inputs.get_shape()[-1]), name="shift")
+        gamma = tf.Variable(initial_value=tf.ones(inputs.get_shape()[-1]), name="scale")
+        return tf.nn.batch_normalization(inputs, mean, variance, beta, gamma, epsilon)
 
 
 def position_wise_feed_forward(inputs,

@@ -1,7 +1,7 @@
 import tensorflow as tf
 import time
 from tensorflow.contrib.linalg import LinearOperatorLowerTriangular
-from model.Modules import Normalize, Normalize_mine
+from model.Modules import Normalize, batchNorm_mine
 from tensorflow.contrib.layers import batch_norm
 
 """
@@ -66,7 +66,7 @@ def multiheadattention(q,
     :param k: A 3d tensor with shape of [batch, lenght_kv, d_k].
     :param v:
     :param heads:An int. Number of heads.
-    :param dropout_keep_prob:
+    :param keys_mask: If true, ignore the padding
     :param causality: If true, units that reference the future are masked.
     :return:
     """
@@ -83,7 +83,7 @@ def multiheadattention(q,
                              "the number of attention heads (%d)" %(d_model, heads))
 
         # 2. split and concat
-        q_ = tf.concat(tf.split(q_proj, heads, axis=2), axis=0)  # [batch*heads, length_q, d_k]
+        q_ = tf.concat(tf.split(q_proj, heads, axis=2), axis=0)  # [batch*heads, length_q, d_k]  [None, 30, 32]
         k_ = tf.concat(tf.split(k_proj, heads, axis=2), axis=0)  # [batch*heads, length_kv, d_k]
         v_ = tf.concat(tf.split(v_proj, heads, axis=2), axis=0)  # [batch*heads, length_kv, d_v]
 
@@ -95,7 +95,7 @@ def multiheadattention(q,
 
         # 4. mask 对key的屏蔽,让那些key值的unit为0的key对应的attention score极小，这样在加权计算value的时候相当于对结果不造成影响。
         # 其实也就是去掉 padding 的影响
-        if keys_mask is not None:
+        if keys_mask:
             # `y = sign(x) = -1` if `x < 0`; 0 if `x == 0` or `tf.is_nan(x)`; 1 if `x > 0`.
             # 将第三维,也就是向量表示加起来,减小一个维度
             key_masks = tf.sign(tf.abs(tf.reduce_sum(k, axis=-1)))  # (batch, length_kv)
@@ -140,12 +140,11 @@ def multiheadattention(q,
         outputs = tf.where(tf.equal(query_mask, 0), paddings, outputs) # [batch*heads, length_q, length_kv]
 
         # Dropout
-        if is_training is None:
-            outputs = tf.layers.dropout(outputs, dropout_keep_prob, )
+
+        outputs = tf.cond(is_training, lambda: tf.layers.dropout(outputs, dropout_keep_prob), lambda:outputs)
 
         # weights sum
         outputs = tf.matmul(outputs, v_)  # [batch*heads, length_q, k_v]
-
 
         # restore shape
         outputs = tf.concat(tf.split(outputs, heads, axis=0), axis=-1) #[batch,length_q, k_v*heads] = [batch, lenght_q, d_model]
@@ -154,14 +153,15 @@ def multiheadattention(q,
         outputs += q    # [batch, lenght_q, d_model]
 
         # Normalize
-        # outputs = Normalize_mine(outputs)  # 这里遇到了bug, 定义 variable 时,需要fixed size,而pop_mean中有 None
-        # 最后选择了最原生态的
-        outputs = batch_norm(outputs,
-                             decay=0.999,
-                             center=True,  # if true, use bate
-                             scale=True,   # if true, use gamma
-                             epsilon=0.001,
-                             activation_fn=None)
+        # tf api
+        # outputs = batch_norm(outputs,
+        #                     decay=0.999,
+        #                     center=True,  # if true, use bate
+        #                     scale=True,   # if true, use gamma
+        #                     epsilon=0.001,
+        #                     activation_fn=None)
+        #
+        outputs = batchNorm_mine(outputs,is_training)
 
         return outputs   # [batch, length_q, d_model]
 

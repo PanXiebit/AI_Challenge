@@ -3,3 +3,8 @@
 *.en
 *.zh
 *.sgm
+temp/
+output/
+tutorial/
+*.ipynb
+test/

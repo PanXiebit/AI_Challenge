@@ -17,8 +17,7 @@ class Transformer():
                  heads=8,
                  num_layers=6,
                  learning_rate=0.01,
-                 dropout_keep_pro=0.5,
-                 initializer=tf.random_normal_initializer(0,1)):
+                 dropout_keep_pro=0.5):
 
         # set hyperparameters
         self.d_k = d_k
@@ -30,7 +29,6 @@ class Transformer():
         self.heads = heads
         self.num_layers = num_layers   # the number of sub_layers
         self.lr = learning_rate
-        self.initializer = initializer
         self.dropout_keep_prob = dropout_keep_pro
 
 
@@ -41,7 +39,8 @@ class Transformer():
 
         # define decoder inputs
         # decoder 的初始输入是随机的？
-        self.decoder_inputs = tf.concat([tf.ones_like(self.input_y[:,:1]), self.input_y[:,:-1]],axis=-1) # <start>
+        self.decoder_inputs = tf.concat([tf.ones_like(self.input_y[:,:1]), self.input_y[:,:-2],
+                                         tf.ones_like(self.input_y[:,-1:])*2],axis=-1) # <start> <end>
 
         # encoder
         self.enc = self._encoder()
@@ -50,10 +49,9 @@ class Transformer():
         self.dec = self._decoder()
 
         # finall linear projection
-        self.logits = tf.layers.dense(self.dec, units=self.vocab_size_en) # [batch, sentence_len, vocab_size_en]
-        self.prediction = tf.argmax(self.logits, axis=-1, output_type=tf.int32) # [batch, sentence_len]
-        self.istarget = tf.to_float(tf.not_equal(self.input_y, 0)) # [1,1,1,1,1,0,0,0,0,0]除去后面padding的部分
-        # self.accuracy = tf.cast(tf.equal(self.prediction, tf.argmax(self.input_y)), dtype=tf.float32)
+        self.logits = tf.layers.dense(self.dec, units=self.vocab_size_en)            # [batch, sentence_len, vocab_size_en]
+        self.prediction = tf.argmax(self.logits, axis=-1, output_type=tf.int32)      # [batch, sentence_len]
+        self.istarget = tf.to_float(tf.not_equal(self.input_y, 0))                   # [1,1,1,1,1,0,0,0,0,0] 不是0的部分转换为1,用以去掉padding部分
         self.acc = tf.reduce_sum(tf.to_float(tf.equal(self.prediction, self.input_y)) * self.istarget) / (
             tf.reduce_sum(self.istarget))   # 准确率的计算是看每一个词/总的词的个数
         tf.summary.scalar("accuracy", self.acc)
@@ -61,7 +59,7 @@ class Transformer():
 
         # loss and accuracy
         self.y_smoothed = label_smoothing(tf.one_hot(self.input_y, depth=self.vocab_size_en))
-        self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_smoothed)
+        self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.y_smoothed))
         tf.summary.scalar("loss", self.loss)
 
         self.global_step = tf.Variable(initial_value=0, trainable=False, name='global_step')
@@ -81,12 +79,6 @@ class Transformer():
         with tf.variable_scope("encoder"):
             # 1. embedding
             with tf.variable_scope("embedding-layer"):
-                # 这个embedding还是要修改,没有padding,没有unk
-                # self.enc = embedding(inputs=self.input_x,
-                #                        vocab_size=self.vocab_size_cn,
-                #                        num_units=self.d_model,
-                #                        scale=True)   # [batch, sentence_len, d_model]
-
                 # 预训练的embedding
                 if not os.path.exists("output/zh_word2vec.npy"):
                     train_wordvec(lan="zh")
@@ -127,12 +119,8 @@ class Transformer():
 
     def _decoder(self):
         with tf.variable_scope("decoder"):
-            # embedding
-            # self.dec = embedding(self.decoder_inputs,
-            #                     vocab_size=self.vocab_size_en,
-            #                     num_units=self.d_model)   # [batch, sentence_len, d_model]
             en_embedding = np.load("output/en_word2vec.npy")                # [en_vocab_size, embed_size]
-            self.dec = tf.nn.embedding_lookup(en_embedding, self.input_y)  # [batch, sentence_len, embed_size]
+            self.dec = tf.nn.embedding_lookup(en_embedding, self.decoder_inputs)   # [batch, sentence_len, embed_size]
 
             # position decoding
             encoding = position_encoding_mine(self.dec.get_shape()[1], self.d_model)
