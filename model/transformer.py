@@ -39,7 +39,7 @@ class Transformer():
 
         # define decoder inputs
         # decoder 的初始输入是随机的？
-        self.decoder_inputs = tf.concat([tf.ones_like(self.input_y[:,:1]), self.input_y[:,:-2],
+        self.decoder_inputs = tf.concat([tf.ones_like(self.input_y[:,:1]), self.input_y[:,1:-1],
                                          tf.ones_like(self.input_y[:,-1:])*2],axis=-1) # <start> <end>
 
         # encoder
@@ -52,7 +52,7 @@ class Transformer():
         self.logits = tf.layers.dense(self.dec, units=self.vocab_size_en)            # [batch, sentence_len, vocab_size_en]
         self.prediction = tf.argmax(self.logits, axis=-1, output_type=tf.int32)      # [batch, sentence_len]
         self.istarget = tf.to_float(tf.not_equal(self.input_y, 0))                   # [1,1,1,1,1,0,0,0,0,0] 不是0的部分转换为1,用以去掉padding部分
-        self.acc = tf.reduce_sum(tf.to_float(tf.equal(self.prediction, self.input_y)) * self.istarget) / (
+        self.acc = tf.reduce_sum(tf.cast(tf.equal(self.prediction, self.input_y), tf.float32) * self.istarget) / (
             tf.reduce_sum(self.istarget))   # 准确率的计算是看每一个词/总的词的个数
         tf.summary.scalar("accuracy", self.acc)
 
@@ -63,10 +63,8 @@ class Transformer():
         tf.summary.scalar("loss", self.loss)
 
         self.global_step = tf.Variable(initial_value=0, trainable=False, name='global_step')
-        self.train_step = tf.Variable(0, trainable=False, name='train_step')
-        self.train_step = tf.assign(self.train_step, tf.add(self.train_step, tf.constant(1)))
         self.train_op = self.add_train_op()
-        tf.summary.scalar('train_step', self.train_step)
+        tf.summary.scalar('train_step', self.global_step)
 
 
     def add_train_op(self):
@@ -91,7 +89,8 @@ class Transformer():
                 encoding = position_encoding_mine(self.enc.get_shape()[1], self.enc.get_shape()[2]) # [sentence_len, embed_size]
                 self.enc *= encoding  #[None, 30, 256]
 
-            # 3.dropout
+            # 3.dropout: In addition, we apply dropout to the sums of the embeddings and the
+            # positional encodings in both the encoder and decoder stacks.
             self.enc = tf.layers.dropout(self.enc,
                                          rate=self.dropout_keep_prob,
                                          training=self.is_training)   # [None, 30, 256]
@@ -101,20 +100,22 @@ class Transformer():
                 with tf.variable_scope("num_layer_{}".format(i)):
                     # multihead attention
                     # encoder: self-attention
-                    self.enc = multiheadattention(q=self.enc,
-                                                  k=self.enc,
-                                                  v=self.enc,
-                                                  d_model=self.d_model,
-                                                  keys_mask=True,
-                                                  heads=self.heads,
-                                                  causality=False,
-                                                  dropout_keep_prob=self.dropout_keep_prob,
-                                                  is_training=self.is_training)  # is_training 在训练和测试的时候不一样,dropout也不一样
+                    with tf.variable_scope("multihead-attention"):
+                        self.enc = multiheadattention(q=self.enc,
+                                                      k=self.enc,
+                                                      v=self.enc,
+                                                      d_model=self.d_model,
+                                                      keys_mask=True,
+                                                      heads=self.heads,
+                                                      causality=False,
+                                                      dropout_keep_prob=self.dropout_keep_prob,
+                                                      is_training=self.is_training)  # is_training 在训练和测试的时候不一样,dropout也不一样
                     # Feed Froward
-                    self.enc = position_wise_feed_forward(self.enc,
-                                                          num_units1= 4*self.d_model,
-                                                          num_units2= self.d_model,
-                                                          reuse=False)
+                    with tf.variable_scope("position-wise"):
+                        self.enc = position_wise_feed_forward(self.enc,
+                                                              num_units1= 4*self.d_model,
+                                                              num_units2= self.d_model,
+                                                              reuse=False)
         return self.enc  #[None, 30, 256]
 
     def _decoder(self):
@@ -156,9 +157,6 @@ class Transformer():
                                                           num_units2= self.d_model)   # [batch, sentence_len, d_model]
 
         return self.dec
-
-
-
 
 
 

@@ -28,7 +28,7 @@ zh_embedding = np.load("output/zh_word2vec.npy") # (143221, 256)
 flags = tf.app.flags
 flags.DEFINE_integer("sentence_len", 30, "the max length of a sentence")
 flags.DEFINE_float("learning_rate", 0.01, "the learning rate")
-flags.DEFINE_float("keep_prob", 0.5, "the probability of dropout to keep")
+flags.DEFINE_float("keep_prob", 0.1, "the probability of dropout to keep")
 flags.DEFINE_integer("embed_size", 256, "the dimension size of english and chinese word vector")
 flags.DEFINE_integer("batch_size", 60, "the size of one batch")
 flags.DEFINE_integer("num_epochs", 10, "the number of epochs")

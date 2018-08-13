@@ -2,7 +2,6 @@ import tensorflow as tf
 import time
 from tensorflow.contrib.linalg import LinearOperatorLowerTriangular
 from model.Modules import Normalize, batchNorm_mine
-from tensorflow.contrib.layers import batch_norm
 
 """
 multi head attention
@@ -90,12 +89,14 @@ def multiheadattention(q,
         # 3. attention score 矩阵运算
         # outputs.shape=[batch*heads, length_q, length_kv]
         # 要理解这个矩阵运算，对一个keys的句子长度为length_kv,需要计算的其中的每一个词与query中每一个词的內积。所以最后的score是[None, length_q, lenght_kv]
+    with tf.variable_scope("attention-score"):
         scalar = tf.rsqrt(d_model/heads)  # 1/sqrt(d_k)
         outputs = tf.matmul(q_*scalar, k_, transpose_b=True)   # [batch*heads, length_q, lenght_kv]
 
         # 4. mask 对key的屏蔽,让那些key值的unit为0的key对应的attention score极小，这样在加权计算value的时候相当于对结果不造成影响。
         # 其实也就是去掉 padding 的影响
-        if keys_mask:
+    if keys_mask:
+        with tf.variable_scope("padding-mask"):
             # `y = sign(x) = -1` if `x < 0`; 0 if `x == 0` or `tf.is_nan(x)`; 1 if `x > 0`.
             # 将第三维,也就是向量表示加起来,减小一个维度
             key_masks = tf.sign(tf.abs(tf.reduce_sum(k, axis=-1)))  # (batch, length_kv)
@@ -113,10 +114,11 @@ def multiheadattention(q,
             paddings = tf.ones_like(outputs) * (-2 ** 32 + 1) # 把 keys_masks中为0的位置,对应的outputs设置的足够小
             outputs = tf.where(tf.equal(key_masks, 0), paddings, outputs)  # [batch*heads, length_q, lenght_kv]
 
-        # Causality = Future blinding
-        # causality参数告知我们是否屏蔽未来序列的信息（解码器self attention的时候不能看到自己之后的那些信息），
-        # 这里即causality为True时的屏蔽操作。
-        if causality:
+    # Causality = Future blinding
+    # causality参数告知我们是否屏蔽未来序列的信息（解码器self attention的时候不能看到自己之后的那些信息），
+    # 这里即causality为True时的屏蔽操作。
+    if causality:
+        with tf.variable_scope("fulture-blinding"):
             # 定义一个与 outputs 后两维相同的矩阵
             diag_vals = tf.ones_like(outputs[0, :, :])  # [length_q, lenght_kv]
             tril = LinearOperatorLowerTriangular(diag_vals).to_dense()  # [length_q, lenght_kv] 得到一个三角阵，下标index大于当前行的值都变为0
@@ -127,8 +129,9 @@ def multiheadattention(q,
             outputs = tf.where(tf.equal(masks, 0), paddings, outputs)  # [batch*heads, length_q, lenght_kv]
 
         # 将socre转换为概率
-        outputs = tf.nn.softmax(outputs, axis=-1) # query 中每个词对应的 score 转化为概率
+    outputs = tf.nn.softmax(outputs, axis=-1) # query 中每个词对应的 score 转化为概率
 
+    with tf.variable_scope("query-padding-mask"):
         # Query Masking 将 padding 的影响降为最小,好奇为啥 key_mask 是选择性的?
         # query中需要mask的地方为 0(padding), 不需要mask的为 1
         query_mask = tf.sign(tf.abs(tf.reduce_sum(q, axis=-1, keepdims=False))) # [batch, lenght_q]
@@ -140,7 +143,7 @@ def multiheadattention(q,
         outputs = tf.where(tf.equal(query_mask, 0), paddings, outputs) # [batch*heads, length_q, length_kv]
 
         # Dropout
-
+    with tf.variable_scope("dropout-Weighted-value-res-bn"):
         outputs = tf.cond(is_training, lambda: tf.layers.dropout(outputs, dropout_keep_prob), lambda:outputs)
 
         # weights sum
@@ -154,16 +157,11 @@ def multiheadattention(q,
 
         # Normalize
         # tf api
-        # outputs = batch_norm(outputs,
-        #                     decay=0.999,
-        #                     center=True,  # if true, use bate
-        #                     scale=True,   # if true, use gamma
-        #                     epsilon=0.001,
-        #                     activation_fn=None)
-        #
-        outputs = batchNorm_mine(outputs,is_training)
+        outputs = tf.layers.batch_normalization(outputs,momentum=0.99,center=True,scale=True,epsilon=0.001)
+        # my implementation
+        # outputs = batchNorm_mine(outputs,is_training)
 
-        return outputs   # [batch, length_q, d_model]
+    return outputs   # [batch, length_q, d_model]
 
 
 

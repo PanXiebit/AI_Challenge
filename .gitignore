@@ -8,3 +8,5 @@ output/
 tutorial/
 *.ipynb
 test/
+*.pyc
+model/__pycache__/

@@ -213,7 +213,7 @@ def position_wise_feed_forward(inputs,
         outputs += inputs
 
         # Normalize
-        outputs = Normalize(outputs)
+        outputs = tf.layers.batch_normalization(outputs)
 
     return outputs
 
@@ -236,7 +236,7 @@ def position_wise_feed_forward_mine(inputs,
         outputs += inputs
 
         # Normalize
-        outputs = Normalize(outputs)
+        outputs = tf.layers.batch_normalization(outputs)
 
     return outputs
 
