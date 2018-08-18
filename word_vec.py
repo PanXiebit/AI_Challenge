@@ -56,7 +56,7 @@ def train_wordvec(lan="en", embedding_dim = 256):
         embeddings.append(model[word])
     embeddings = np.array(embeddings, dtype=np.float32)
     
-    weights = np.zeros((input_dim, embedding_dim), np.float32)
+    weights = np.zeros((input_dim, embedding_dim), np.float32)  # weights[0] padding
     weights[1] = np.ones(embedding_dim, np.float32) * 0.33   # start
     weights[2] = np.ones(embedding_dim, np.float32) * 0.66   # end
     weights[3] = np.average(embeddings, axis = 0)

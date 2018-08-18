@@ -51,7 +51,7 @@ VOCAB_SIZE_CN = zh_embedding.shape[0]
 
 # iter to get the train dataset
 def batch_iter(train_en, train_zh, batch_size, num_epochs):
-    num_batches_per_epoch = (len(train_en) - 1) // batch_size + 1  # 7922595//60=132594 这会不会太多了啊?????但是batch太大,内存不够吧?
+    num_batches_per_epoch = (len(train_en) - 1) // batch_size + 1  # 7922595//128=61895 这会不会太多了啊?????但是batch太大,内存不够吧?
     for i in range(num_epochs):
         index = np.arange(len(train_en))
         np.random.shuffle(index)
@@ -68,7 +68,6 @@ parser.add_argument("--model", type=str, default="seq2seq",
                     help="transformer | seq2seq")
 args = parser.parse_args()
 
-"""
 if args.model == "transformer":
     model = Transformer(d_k=32,
                         d_v=32,
@@ -80,9 +79,8 @@ if args.model == "transformer":
                         num_layers=6,
                         learning_rate=FLAGS.learning_rate,
                         dropout_keep_pro=FLAGS.keep_prob)
-"""
 
-if args.model == "seq2seq":
+elif args.model == "seq2seq":
     model = seq2seq(sequence_len=FLAGS.sentence_len,
                     vocab_size_x=VOCAB_SIZE_CN,
                     vocab_size_y=VOCAB_SIZE_EN,
@@ -108,13 +106,12 @@ with tf.Session() as sess:
         train_feed = {model.input_x:zh_batch,
                       model.input_y:en_batch,
                       model.is_training:True}
-        summary, _, step, acc_, loss_ = sess.run([merged, model.train_op, model.global_step, model.acc, model.loss],
+        summary, _, step, acc_, loss_ = sess.run([merged, model.train_op, model.global_step, model.loss, model.acc],
                                                  feed_dict=train_feed)
         if step % 200 == 0:
             print("step {0}: loss = {1}, acc:{2}".format(step, loss_, acc_))
             writer.add_summary(summary, step)
-            saver.save(sess, "temp/" + args.model + "/save")
-        """
+
         if step % 1000 == 0:
             valid_batch = batch_iter(valid_en, valid_zh, 1000, 1)
             val_accuracy, cnt = 0, 0
@@ -130,5 +127,5 @@ with tf.Session() as sess:
 
             val_accuracy = val_accuracy / cnt
             print("\n{0} steps, Validation Accuracy is {1}\n".format(step // num_batches_per_epoch, val_accuracy / cnt))
-        """
+    saver.save(sess, "temp/" + args.model + "/save")
 writer.close()
